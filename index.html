@@ -1,40 +1,343 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="ja">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f2f2f7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="湿度天秤">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>湿度天秤</title>
+<!-- Flutter版のファイルをそのまま流用。無ければこの3行は削除してOK -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="icons/Icon-192.png">
+<style>
+  *{box-sizing:border-box;margin:0}
+  :root{
+    --label:#1a1c1e; --muted:#8e8e93; --blue:#2196f3; --orange:#ff9800;
+    --well:#e5e5ea;
+    --wheel-h:210px;
+  }
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:#f2f2f7; color:var(--label);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    touch-action:manipulation; overscroll-behavior:none; -webkit-tap-highlight-color:transparent;
+  }
+  main{
+    max-width:560px; margin:0 auto;
+    padding:max(16px,env(safe-area-inset-top)) env(safe-area-inset-right)
+            max(16px,env(safe-area-inset-bottom)) env(safe-area-inset-left);
+  }
+  hr{border:0; border-top:1px solid rgba(60,60,67,.29); margin:16px 0}
 
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
+  /* 屋外・室内のパネル */
+  h2{font-size:22px; font-weight:700; padding:6px 16px}
+  .row{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:center; padding:0 12px}
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+  /* 左：気温・湿度のダイヤル */
+  .dials{display:flex; align-items:center; padding:4px; background:var(--well); border-radius:12px}
+  .dials .host{flex:1; min-width:0}
+  .vline{flex:0 0 1px; height:140px; background:rgba(0,0,0,.12)}
 
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="/shitsudo-tenbin/">
+  /* 右：計算結果(3行2列) */
+  .tiles{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:6px}
+  .tile{
+    height:66px; padding:8px; background:#fff; border-radius:8px;
+    box-shadow:0 1.5px 3px rgba(0,0,0,.04);
+    display:flex; flex-direction:column; justify-content:center; align-items:flex-start; min-width:0;
+  }
+  .tile .lab{font-size:11px; font-weight:600; color:rgba(0,0,0,.54); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%}
+  .tile .num{display:flex; align-items:baseline; gap:2px; margin-top:3px; max-width:100%}
+  .tile .v{font-family:Courier,"Courier New",monospace; font-size:18px; font-weight:700; white-space:nowrap}
+  .tile .u{font-size:10px; font-weight:500; color:rgba(0,0,0,.54)}
 
-  <link rel="apple-touch-icon" href="icons/app_icon.png">
+  /* 換気アドバイス */
+  .advice{
+    display:flex; align-items:center; gap:12px; margin:0 14px; padding:12px 18px;
+    background:var(--well); border-radius:12px;
+  }
+  .advice .ico{
+    flex:0 0 30px; width:30px; height:30px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent);
+  }
+  .advice .ico svg{width:16px; height:16px}
+  .advice .msg{font-size:14px; font-weight:700; color:rgba(0,0,0,.87)}
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  .notes{padding:0 16px; margin-top:24px; font-size:11px; line-height:1.4; color:rgba(0,0,0,.45)}
+  .notes p + p{margin-top:4px}
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="shitsudo_tenbin">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>shitsudo_tenbin</title>
-  <link rel="manifest" href="manifest.json">
+  /* ダイヤル本体（スクロールスナップ + 円筒風の見た目） */
+  .wheel{
+    position:relative; overflow:hidden; height:var(--wheel-h);
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+  }
+  .wheel:focus-visible{outline:2px solid #007aff; outline-offset:-2px; border-radius:8px}
+  .band{
+    position:absolute; z-index:0; pointer-events:none; border-radius:8px;
+    left:8px; right:8px; top:calc(50% - var(--size)/2); height:var(--size);
+    background:rgba(118,118,128,.12);
+  }
+  .scroller{
+    position:relative; z-index:1; height:100%; overflow-y:scroll; scroll-snap-type:y mandatory;
+    overscroll-behavior:contain; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  .scroller::-webkit-scrollbar{display:none}
+  .spacer{height:calc((var(--wheel-h) - var(--size))/2)}
+  .cell{height:var(--size); display:flex; align-items:center; justify-content:center; scroll-snap-align:center; font-size:17px; font-weight:600; font-variant-numeric:tabular-nums}
+  /* 見た目の変形は中のspanにだけかける（スナップ位置がずれないように） */
+  .t{display:block; opacity:0; white-space:nowrap}
+</style>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+<main>
+  <section id="p-outdoor"></section>
+  <hr>
+  <div class="advice" id="advice" style="--c:var(--blue)">
+    <div class="ico" id="advice-ico"></div>
+    <div class="msg" id="advice-msg"></div>
+  </div>
+  <hr>
+  <section id="p-indoor"></section>
+
+  <div class="notes">
+    <p>※ 暑さ指数（WBGT）は黒体球を用いた測定値ではないため、計算式による参考値です。</p>
+    <p>※ 体感温度はミスナールの計算式に基づき、風速 0 m/s として計算しています。</p>
+  </div>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+// ==========================================
+// 計算（Flutter版と同じ式）
+// ==========================================
+// --- calc ---
+const pow = Math.pow;
+const saturatedVapor = t => 6.1078 * pow(10, (7.5 * t) / (t + 237.3)) * 0.794;   // 飽和水蒸気量 (g/m³)
+const currentVapor   = (t, h) => saturatedVapor(t) * (h / 100);                  // 水蒸気量 (g/m³)
+const dewPoint       = (t, h) => t - ((100 - h) / 5);                            // 露点温度
+const wbgt           = (t, h) => Math.max(0, 0.725 * t + 0.0368 * h + 0.0012 * t * h - 3.246);  // 暑さ指数（参考値）
+const discomfort     = (t, h) => 0.81 * t + 0.01 * h * (0.99 * t - 14.3) + 46.3; // 不快指数
+const perceivedTemp  = (t, h) => t - 2.3 * (t - 10) * (0.8 - h / 100) / 21;      // 体感温度（ミスナール式・風速0m/s）
+// --- end calc ---
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const STEP = Math.PI / 9;   // 隣の項目との角度(20°)
+const MAXA = 1.4;           // これ以上傾いた項目は隠す(ラジアン)
+const RANGE = 4;            // 中央から前後何項目まで見た目を更新するか
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// ==========================================
+// ダイヤル
+// ==========================================
+class Wheel {
+  constructor(host, { count, size, format, label, onChange }) {
+    this.host = host; this.size = size; this.count = count; this.onChange = onChange;
+    this.raf = 0; this.range = [0, -1];
+
+    host.classList.add('wheel');
+    host.style.setProperty('--size', size + 'px');
+    host.tabIndex = 0;
+    host.setAttribute('role', 'slider');
+    host.setAttribute('aria-label', label);
+    host.setAttribute('aria-orientation', 'vertical');
+    host.setAttribute('aria-valuemin', '0');
+    host.setAttribute('aria-valuemax', String(count - 1));
+
+    const band = document.createElement('div'); band.className = 'band';
+    const sc = document.createElement('div'); sc.className = 'scroller';
+    const spacer = () => { const s = document.createElement('div'); s.className = 'spacer'; return s; };
+    sc.append(spacer());
+    this.spans = [];
+    this.texts = [];
+    for (let i = 0; i < count; i++) {
+      const cell = document.createElement('div'); cell.className = 'cell';
+      const t = document.createElement('span'); t.className = 't'; t.textContent = format(i);
+      this.texts.push(t.textContent);
+      cell.append(t); sc.append(cell); this.spans.push(t);
+    }
+    sc.append(spacer());
+    host.append(band, sc);
+    this.sc = sc;
+
+    sc.addEventListener('scroll', () => this.onScroll(), { passive: true });
+    host.addEventListener('keydown', e => {
+      const k = { ArrowDown: 1, ArrowUp: -1, PageDown: 5, PageUp: -5 }[e.key];
+      if (k === undefined) return;
+      e.preventDefault();
+      this.scrollToIndex(this.index + k, true);
+    });
+  }
+
+  get pos() { return this.sc.scrollTop / this.size; }
+  get index() { return clamp(Math.round(this.pos), 0, this.count - 1); }
+
+  onScroll() {
+    if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.render(); });
+    const i = this.index;
+    this.host.setAttribute('aria-valuenow', String(i));
+    this.host.setAttribute('aria-valuetext', this.texts[i]);
+    this.onChange(i);
+  }
+
+  scrollToIndex(i, animate) {
+    const v = clamp(i, 0, this.count - 1) * this.size;
+    if (animate && !reduceMotion) this.sc.scrollTo({ top: v, behavior: 'smooth' });
+    else { this.sc.scrollTop = v; this.render(); }
+  }
+
+  /** 中央からの距離に応じて、傾き・縮み・濃さを付ける */
+  render() {
+    const pos = this.pos, R = this.size / STEP;
+    const lo = Math.max(0, Math.floor(pos) - RANGE), hi = Math.min(this.count - 1, Math.ceil(pos) + RANGE);
+    for (let i = this.range[0]; i <= this.range[1]; i++) {
+      if (i < lo || i > hi) { const s = this.spans[i].style; s.opacity = ''; s.transform = ''; }
+    }
+    for (let i = lo; i <= hi; i++) {
+      const s = this.spans[i].style, d = i - pos, th = d * STEP;
+      if (Math.abs(th) >= MAXA) { s.opacity = '0'; continue; }
+      const cos = Math.cos(th), shift = R * Math.sin(th) - d * this.size;
+      s.transform = `translateY(${shift}px) scaleY(${cos})`;
+      s.opacity = Math.pow(cos, 1.3).toFixed(3);
+      s.color = `color-mix(in srgb, var(--label) ${Math.round(Math.max(0, 1 - Math.abs(d)) * 100)}%, var(--muted))`;
+    }
+    this.range = [lo, hi];
+  }
+}
+
+// ==========================================
+// 設定と保存
+// ==========================================
+const CFG = {
+  outdoor: { title: '☀️ 屋外', defT: 15, defH: 60, minT: -30, maxT: 40 },
+  indoor:  { title: '🏠 室内', defT: 22, defH: 40, minT: 10,  maxT: 40 },
+};
+const KEY = 'shitsudo-tenbin-v1';
+// Flutter版が保存していたキー（引き継ぎ用）
+const OLD = {
+  outdoor: { t: 'flutter.weather_outdoor_temp', h: 'flutter.weather_outdoor_hum' },
+  indoor:  { t: 'flutter.weather_indoor_temp',  h: 'flutter.weather_indoor_hum' },
+};
+
+function readOld(k) {
+  try {
+    const n = parseInt(JSON.parse(localStorage.getItem(k)), 10);
+    return Number.isFinite(n) ? n : null;
+  } catch (e) { return null; }
+}
+
+function load() {
+  const S = {};
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 壊れていたら初期値 */ }
+  for (const id of Object.keys(CFG)) {
+    const c = CFG[id];
+    let t = saved && Number.isFinite(saved[id]?.t) ? saved[id].t : null;
+    let h = saved && Number.isFinite(saved[id]?.h) ? saved[id].h : null;
+    if (t === null) t = readOld(OLD[id].t);   // 新しい保存が無ければ、Flutter版の値を引き継ぐ
+    if (h === null) h = readOld(OLD[id].h);
+    S[id] = {
+      t: clamp(Math.round(t ?? c.defT), c.minT, c.maxT),
+      h: clamp(Math.round(h ?? c.defH), 0, 100),
+    };
+  }
+  return S;
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 保存できなくても動作は続ける */ } }
+
+const S = load();
+
+// ==========================================
+// 画面
+// ==========================================
+const TILES = [
+  ['sat',  '飽和水蒸気', 'g'], ['wbgt', '暑さ指数', ''],
+  ['vap',  '水蒸気量',   'g'], ['di',   '不快指数', ''],
+  ['dew',  '露点温度',   '℃'], ['feel', '体感温度', '℃'],
+];
+
+function buildPanel(id) {
+  const c = CFG[id], root = document.getElementById('p-' + id);
+  const h2 = document.createElement('h2'); h2.textContent = c.title;
+  const row = document.createElement('div'); row.className = 'row';
+
+  const dials = document.createElement('div'); dials.className = 'dials';
+  const hostT = document.createElement('div'); hostT.className = 'host';
+  const line = document.createElement('div'); line.className = 'vline';
+  const hostH = document.createElement('div'); hostH.className = 'host';
+  dials.append(hostT, line, hostH);
+
+  const tiles = document.createElement('div'); tiles.className = 'tiles';
+  const out = {};
+  for (const [key, label, unit] of TILES) {
+    const tile = document.createElement('div'); tile.className = 'tile';
+    const lab = document.createElement('div'); lab.className = 'lab'; lab.textContent = label;
+    const num = document.createElement('div'); num.className = 'num';
+    const v = document.createElement('span'); v.className = 'v';
+    num.append(v);
+    if (unit) { const u = document.createElement('span'); u.className = 'u'; u.textContent = unit; num.append(u); }
+    tile.append(lab, num); tiles.append(tile);
+    out[key] = v;
+  }
+  row.append(dials, tiles);
+  root.append(h2, row);
+
+  const nameT = c.title.replace(/^\S+\s*/, '');   // 絵文字を除いた名前（読み上げ用）
+  const wT = new Wheel(hostT, {
+    count: c.maxT - c.minT + 1, size: 40, label: nameT + ' 気温',
+    format: i => (c.minT + i) + '℃',
+    onChange: i => { const v = c.minT + i; if (S[id].t !== v) { S[id].t = v; update(); save(); } },
+  });
+  const wH = new Wheel(hostH, {
+    count: 101, size: 40, label: nameT + ' 湿度',
+    format: i => i + '%',
+    onChange: i => { if (S[id].h !== i) { S[id].h = i; update(); save(); } },
+  });
+  return { out, wT, wH };
+}
+
+const P = { outdoor: buildPanel('outdoor'), indoor: buildPanel('indoor') };
+
+const ICON = {
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M9 9l6 6M15 9v6H9"/></svg>',
+  up:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M9 15l6-6M9 9h6v6"/></svg>',
+};
+let lastDir = null;
+
+function update() {
+  for (const id of Object.keys(CFG)) {
+    const { t, h } = S[id], o = P[id].out;
+    o.sat.textContent  = saturatedVapor(t).toFixed(1);
+    o.wbgt.textContent = wbgt(t, h).toFixed(1);
+    o.vap.textContent  = currentVapor(t, h).toFixed(1);
+    o.di.textContent   = discomfort(t, h).toFixed(1);
+    o.dew.textContent  = dewPoint(t, h).toFixed(1);
+    o.feel.textContent = perceivedTemp(t, h).toFixed(1);
+  }
+  // 窓を開けたときの変化：室内の水蒸気量が多ければ、湿度は下がる
+  const decrease = currentVapor(S.indoor.t, S.indoor.h) > currentVapor(S.outdoor.t, S.outdoor.h);
+  if (decrease !== lastDir) {
+    lastDir = decrease;
+    document.getElementById('advice').style.setProperty('--c', decrease ? 'var(--blue)' : 'var(--orange)');
+    document.getElementById('advice-ico').innerHTML = decrease ? ICON.down : ICON.up;
+    document.getElementById('advice-msg').textContent =
+      decrease ? '窓を開けると室内の湿度が下がります' : '窓を開けると室内の湿度が上がります';
+  }
+}
+
+update();
+for (const id of Object.keys(CFG)) {
+  const c = CFG[id];
+  P[id].wT.scrollToIndex(S[id].t - c.minT, false);
+  P[id].wH.scrollToIndex(S[id].h, false);
+}
+})();
+</script>
 </body>
 </html>
